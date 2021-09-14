@@ -23,12 +23,36 @@ mod source {
     use std::{io::Error, path::Path, time::Duration};
 
     #[derive(Debug)]
-    pub struct FileEventReceived<'a> {
+    pub struct FileBytesReceived<'a> {
+        pub byte_size: usize,
+        pub path: &'a str,
+    }
+
+    impl<'a> InternalEvent for FileBytesReceived<'a> {
+        fn emit_logs(&self) {
+            trace!(
+                message = "Bytes received.",
+                byte_size = %self.byte_size,
+                protocol = "file",
+                path = %self.path,
+            );
+        }
+
+        fn emit_metrics(&self) {
+            counter!("received_bytes_total", self.byte_size as u64,
+                     "protocol" => "file",
+                     "path" => self.path.to_string(),
+            );
+        }
+    }
+
+    #[derive(Debug)]
+    pub struct FileEventsReceived<'a> {
         pub file: &'a str,
         pub byte_size: usize,
     }
 
-    impl InternalEvent for FileEventReceived<'_> {
+    impl InternalEvent for FileEventsReceived<'_> {
         fn emit_logs(&self) {
             trace!(
                 message = "Received one event.",
@@ -48,6 +72,10 @@ mod source {
             );
             counter!(
                 "processed_bytes_total", self.byte_size as u64,
+                "file" => self.file.to_owned(),
+            );
+            counter!(
+                "received_event_bytes_total", self.byte_size as u64,
                 "file" => self.file.to_owned(),
             );
         }
@@ -75,12 +103,12 @@ mod source {
     }
 
     #[derive(Debug)]
-    pub struct FileFingerprintReadFailed<'a> {
+    pub struct FileFingerprintReadError<'a> {
         pub path: &'a Path,
         pub error: Error,
     }
 
-    impl<'a> InternalEvent for FileFingerprintReadFailed<'a> {
+    impl<'a> InternalEvent for FileFingerprintReadError<'a> {
         fn emit_logs(&self) {
             error!(
                 message = "Failed reading file for fingerprinting.",
@@ -91,19 +119,19 @@ mod source {
 
         fn emit_metrics(&self) {
             counter!(
-                "fingerprint_read_errors_total", 1,
+                "fingerprint_read_errors_total", 1, // FIXME
                 "file" => self.path.to_string_lossy().into_owned(),
             );
         }
     }
 
     #[derive(Debug)]
-    pub struct FileDeleteFailed<'a> {
+    pub struct FileDeleteError<'a> {
         pub path: &'a Path,
         pub error: Error,
     }
 
-    impl<'a> InternalEvent for FileDeleteFailed<'a> {
+    impl<'a> InternalEvent for FileDeleteError<'a> {
         fn emit_logs(&self) {
             warn!(
                 message = "Failed in deleting file.",
@@ -115,7 +143,7 @@ mod source {
 
         fn emit_metrics(&self) {
             counter!(
-                "file_delete_errors_total", 1,
+                "file_delete_errors_total", 1, // FIXME
                 "file" => self.path.to_string_lossy().into_owned(),
             );
         }
@@ -164,12 +192,12 @@ mod source {
     }
 
     #[derive(Debug)]
-    pub struct FileWatchFailed<'a> {
+    pub struct FileWatchError<'a> {
         pub path: &'a Path,
         pub error: Error,
     }
 
-    impl<'a> InternalEvent for FileWatchFailed<'a> {
+    impl<'a> InternalEvent for FileWatchError<'a> {
         fn emit_logs(&self) {
             error!(
                 message = "Failed to watch file.",
@@ -251,11 +279,11 @@ mod source {
     }
 
     #[derive(Debug)]
-    pub struct FileCheckpointWriteFailed {
+    pub struct FileCheckpointWriteError {
         pub error: Error,
     }
 
-    impl InternalEvent for FileCheckpointWriteFailed {
+    impl InternalEvent for FileCheckpointWriteError {
         fn emit_logs(&self) {
             warn!(message = "Failed writing checkpoints.", error = %self.error);
         }
@@ -266,12 +294,12 @@ mod source {
     }
 
     #[derive(Debug)]
-    pub struct PathGlobbingFailed<'a> {
+    pub struct PathGlobbingError<'a> {
         pub path: &'a Path,
         pub error: &'a Error,
     }
 
-    impl<'a> InternalEvent for PathGlobbingFailed<'a> {
+    impl<'a> InternalEvent for PathGlobbingError<'a> {
         fn emit_logs(&self) {
             error!(
                 message = "Failed to glob path.",
@@ -303,8 +331,8 @@ mod source {
             });
         }
 
-        fn emit_file_watch_failed(&self, path: &Path, error: Error) {
-            emit!(FileWatchFailed { path, error });
+        fn emit_file_watch_error(&self, path: &Path, error: Error) {
+            emit!(FileWatchError { path, error });
         }
 
         fn emit_file_unwatched(&self, path: &Path) {
@@ -315,12 +343,12 @@ mod source {
             emit!(FileDeleted { path });
         }
 
-        fn emit_file_delete_failed(&self, path: &Path, error: Error) {
-            emit!(FileDeleteFailed { path, error });
+        fn emit_file_delete_error(&self, path: &Path, error: Error) {
+            emit!(FileDeleteError { path, error });
         }
 
-        fn emit_file_fingerprint_read_failed(&self, path: &Path, error: Error) {
-            emit!(FileFingerprintReadFailed { path, error });
+        fn emit_file_fingerprint_read_error(&self, path: &Path, error: Error) {
+            emit!(FileFingerprintReadError { path, error });
         }
 
         fn emit_file_checksum_failed(&self, path: &Path) {
@@ -331,8 +359,8 @@ mod source {
             emit!(FileCheckpointed { count, duration });
         }
 
-        fn emit_file_checkpoint_write_failed(&self, error: Error) {
-            emit!(FileCheckpointWriteFailed { error });
+        fn emit_file_checkpoint_write_error(&self, error: Error) {
+            emit!(FileCheckpointWriteError { error });
         }
 
         fn emit_files_open(&self, count: usize) {
@@ -340,7 +368,7 @@ mod source {
         }
 
         fn emit_path_globbing_failed(&self, path: &Path, error: &Error) {
-            emit!(PathGlobbingFailed { path, error });
+            emit!(PathGlobbingError { path, error });
         }
     }
 }
